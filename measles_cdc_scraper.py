@@ -20,68 +20,14 @@ import os
 import re
 
 # ── Configuration ─────────────────────────────────────────────────────────────
+file_path = 'cdc_measles_urls.txt'
 
-URLS = [
-    "https://web.archive.org/web/20260304022912/https://www.cdc.gov/measles/data-research/index.html",
-    "https://web.archive.org/web/20260226022109/https://www.cdc.gov/measles/data-research/index.html",
-    "https://web.archive.org/web/20260219082434/https://www.cdc.gov/measles/data-research/index.html",
-    "https://web.archive.org/web/20260212041107/https://www.cdc.gov/measles/data-research/index.html",
-    "https://web.archive.org/web/20260205125741/https://www.cdc.gov/measles/data-research/index.html",
-    "https://web.archive.org/web/20260129055811/https://www.cdc.gov/measles/data-research/index.html",
-    "https://web.archive.org/web/20260122043835/https://www.cdc.gov/measles/data-research/index.html",
-    "https://web.archive.org/web/20260108073126/https://www.cdc.gov/measles/data-research/index.html",
-    "https://web.archive.org/web/20260107085029/https://www.cdc.gov/measles/data-research/index.html",
-    "https://web.archive.org/web/20251230211653/https://www.cdc.gov/measles/data-research/index.html",
-    "https://web.archive.org/web/20251222182118/https://www.cdc.gov/measles/data-research/index.html",
-    "https://web.archive.org/web/20251216192914/https://www.cdc.gov/measles/data-research/index.html",
-    "https://web.archive.org/web/20251209174524/https://www.cdc.gov/measles/data-research/index.html",
-    "https://web.archive.org/web/20251201135237/https://www.cdc.gov/measles/data-research/index.html",
-    "https://web.archive.org/web/20251125123810/https://www.cdc.gov/measles/data-research/index.html",
-    "https://web.archive.org/web/20251118121655/https://www.cdc.gov/measles/data-research/index.html",
-    "https://web.archive.org/web/20251112194142/https://www.cdc.gov/measles/data-research/index.html",
-    "https://web.archive.org/web/20251109185844/https://www.cdc.gov/measles/data-research/index.html",
-    "https://web.archive.org/web/20251104095354/https://www.cdc.gov/measles/data-research/index.html",
-    "https://web.archive.org/web/20251029131356/https://www.cdc.gov/measles/data-research/index.html",
-    "https://web.archive.org/web/20251021132050/https://www.cdc.gov/measles/data-research/index.html",
-    "https://web.archive.org/web/20251015072202/https://www.cdc.gov/measles/data-research/index.html",
-    "https://web.archive.org/web/20251007190147/https://www.cdc.gov/measles/data-research/index.html",
-    "https://web.archive.org/web/20250930192816/https://www.cdc.gov/measles/data-research/index.html",
-    "https://web.archive.org/web/20250923192759/https://www.cdc.gov/measles/data-research/index.html",
-    "https://web.archive.org/web/20250916172209/https://www.cdc.gov/measles/data-research/index.html",
-    "https://web.archive.org/web/20250909211703/https://www.cdc.gov/measles/data-research/index.html",
-    "https://web.archive.org/web/20250902141655/https://www.cdc.gov/measles/data-research/index.html",
-    "https://web.archive.org/web/20250826192651/https://www.cdc.gov/measles/data-research/index.html",
-    "https://web.archive.org/web/20250819212746/https://www.cdc.gov/measles/data-research/index.html",
-    "https://web.archive.org/web/20250805192903/https://www.cdc.gov/measles/data-research/index.html",
-    "https://web.archive.org/web/20250729130523/https://www.cdc.gov/measles/data-research/index.html",
-    "https://web.archive.org/web/20250722163010/https://www.cdc.gov/measles/data-research/index.html",
-    "https://web.archive.org/web/20250715201043/https://www.cdc.gov/measles/data-research/index.html",
-    "https://web.archive.org/web/20250708192645/https://www.cdc.gov/measles/data-research/index.html",
-    "https://web.archive.org/web/20250701192738/https://www.cdc.gov/measles/data-research/index.html",
-    "https://web.archive.org/web/20250624192701/https://www.cdc.gov/measles/data-research/index.html",
-    "https://web.archive.org/web/20250617192823/https://www.cdc.gov/measles/data-research/index.html",
-    "https://web.archive.org/web/20250612210526/https://www.cdc.gov/measles/data-research/index.html",
-    "https://web.archive.org/web/20250605071309/https://www.cdc.gov/measles/data-research/index.html",
-    "https://web.archive.org/web/20250529220521/https://www.cdc.gov/measles/data-research/index.html",
-    "https://web.archive.org/web/20250522104501/https://www.cdc.gov/measles/data-research/index.html", 
-    "https://web.archive.org/web/20250515230033/https://www.cdc.gov/measles/data-research/index.html",
-    "https://web.archive.org/web/20250507184209/https://www.cdc.gov/measles/data-research/index.html",
-    "https://web.archive.org/web/20250501130832/https://www.cdc.gov/measles/data-research/index.html",
-    "https://web.archive.org/web/20250424192417/https://www.cdc.gov/measles/data-research/index.html",
-    "https://web.archive.org/web/20250417234734/https://www.cdc.gov/measles/data-research/index.html",
-    "https://web.archive.org/web/20250410194606/https://www.cdc.gov/measles/data-research/index.html",
-    "https://web.archive.org/web/20250403193119/https://www.cdc.gov/measles/data-research/index.html",
-    "https://web.archive.org/web/20250327223649/https://www.cdc.gov/measles/data-research/index.html",
-    "https://web.archive.org/web/20250320235609/https://www.cdc.gov/measles/data-research/index.html",
-    "https://web.archive.org/web/20250312223228/https://www.cdc.gov/measles/data-research/index.html",
-    "https://web.archive.org/web/20250306170908/https://www.cdc.gov/measles/data-research/index.html",
-    "https://web.archive.org/web/20250227021517/https://www.cdc.gov/measles/data-research/index.html",
-    "https://web.archive.org/web/20250220144344/https://www.cdc.gov/measles/data-research/index.html",
-    "https://web.archive.org/web/20250203191249/https://www.cdc.gov/measles/data-research/index.html"
-    # Add more URLs here, one per line:
-        # "https://web.archive.org/web/20250901000000/https://www.cdc.gov/measles/data-research/index.html",
-]
+with open(file_path, 'r') as f:
+    URL_list = [line.strip() for line in f]
 
+URLS = URL_list
+
+# CHANGE THIS 
 OUTPUT_FILE = os.path.expanduser("~/Desktop/output.txt")
 WAIT_SECONDS = 4      # Seconds to wait after page load for JS to finish rendering
 TIMEOUT_MS   = 30000  # Page load timeout in milliseconds
