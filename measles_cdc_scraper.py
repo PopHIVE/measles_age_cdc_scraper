@@ -28,7 +28,7 @@ with open(file_path, 'r') as f:
 URLS = URL_list
 
 # CHANGE THIS 
-OUTPUT_FILE = os.path.expanduser("~/Desktop/output.txt")
+OUTPUT_FILE = os.path.expanduser("~/output.txt")
 WAIT_SECONDS = 4      # Seconds to wait after page load for JS to finish rendering
 TIMEOUT_MS   = 30000  # Page load timeout in milliseconds
 
