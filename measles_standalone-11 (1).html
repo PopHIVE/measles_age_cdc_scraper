@@ -1,0 +1,512 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>CDC Measles Data Scraper</title>
+<style>
+body{font-family:Arial,sans-serif;padding:20px;background:#f4f6f7;color:#222;margin:0}
+h1{font-size:20px;margin-bottom:4px}
+p.sub{font-size:13px;color:#666;margin-bottom:18px}
+.card{background:#fff;border-radius:8px;padding:20px;margin-bottom:18px;box-shadow:0 1px 4px rgba(0,0,0,.08)}
+label{font-size:13px;font-weight:bold;display:block;margin-bottom:6px}
+textarea{width:100%;font-size:12px;border:1px solid #ccc;border-radius:5px;padding:8px;font-family:monospace;resize:vertical;box-sizing:border-box}
+button{padding:9px 18px;border:none;border-radius:5px;font-size:13px;cursor:pointer;font-weight:bold;margin-right:6px;margin-top:10px}
+.btn-blue{background:#1a5276;color:#fff}
+.btn-light{background:#e8f4fd;color:#1a5276}
+.btn-red{background:#fdecea;color:#c0392b}
+.btn-green{background:#1e8449;color:#fff}
+.wrap{overflow-x:auto;margin-top:16px}
+table{border-collapse:collapse;font-size:12px;width:100%;min-width:900px}
+thead tr{background:#1a5276;color:#fff}
+th,td{padding:7px 9px;border:1px solid #ddd;text-align:center;white-space:nowrap}
+tbody tr:nth-child(even){background:#f4f6f7}
+.na{color:#bbb}
+.hint{font-size:12px;color:#777;line-height:1.6;background:#fef9e7;border:1px solid #f0c040;border-radius:5px;padding:10px;margin-bottom:12px}
+.msg{font-size:12px;padding:7px 10px;border-radius:4px;margin-top:10px;display:none}
+.msg-ok{background:#eafaf1;color:#1e8449}
+.msg-err{background:#fdecea;color:#c0392b}
+.msg-warn{background:#fef9e7;color:#9a7d0a}
+</style>
+</head>
+<body>
+
+<h1>CDC Measles Data Scraper</h1>
+<p class="sub">Paste the contents of output.txt from the Playwright Python scraper, or paste text from a single CDC page.</p>
+
+<div class="card">
+  <div class="hint">
+    Paste the full <code>output.txt</code> file from the Python scraper (multiple pages separated by <code>===</code> dividers), or paste text copied directly from a single CDC page. Each page produces one row sorted by update date.
+  </div>
+  <label>Paste CDC text here:</label>
+  <textarea id="pasteBox" style="height:200px" placeholder="Paste output.txt contents or a single CDC page here..."></textarea>
+  <div>
+    <button class="btn-blue" onclick="parseAndAdd()">Parse and Add to Table</button>
+    <button class="btn-light" onclick="document.getElementById('pasteBox').value=''">Clear Input</button>
+    <button class="btn-red" onclick="clearTable()">Clear Table</button>
+    <button class="btn-green" id="exportBtn" style="display:none" onclick="exportCSV()">Export CSV</button>
+  </div>
+  <div class="msg" id="msg"></div>
+</div>
+
+<div class="card">
+  <strong>Results &nbsp;<span id="rowCount" style="font-size:12px;color:#888">0 rows</span></strong>
+  <div class="wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Update Date</th>
+          <th>Total Cases</th>
+          <th>Cases &lt;5</th>
+          <th>Cases 5-19</th>
+          <th>Cases 20+</th>
+          <th>Cases Age Unknown</th>
+          <th>Cases Unvacc/Unknown</th>
+          <th>Cases 1 Dose</th>
+          <th>Cases 2+ Doses</th>
+          <th>Hosp. Total</th>
+          <th>Hosp. &lt;5 %</th>
+          <th>Hosp. 5-19 %</th>
+          <th>Hosp. 20+ %</th>
+          <th>Hosp. Age Unknown %</th>
+        </tr>
+      </thead>
+      <tbody id="tbody">
+        <tr><td colspan="14" class="na">No data yet. Paste CDC text above and click Parse.</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+var rows = [];
+
+function showMsg(text, type) {
+  var el = document.getElementById("msg");
+  el.textContent = text;
+  el.className = "msg msg-" + type;
+  el.style.display = "block";
+}
+function clearTable() { rows = []; renderTable(); showMsg("Table cleared.", "warn"); }
+
+function parseNum(s) {
+  if (!s) return null;
+  var n = parseInt((s + "").replace(/,/g, ""), 10);
+  return isNaN(n) ? null : n;
+}
+function parsePct(s) {
+  if (!s) return null;
+  var m = (s + "").match(/(\d+(?:\.\d+)?)\s*%/);
+  return m ? parseFloat(m[1]) : null;
+}
+
+// ── Split on === dividers ─────────────────────────────────────────────────────
+function splitIntoPages(raw) {
+  var parts = raw.split(/={20,}/).map(function(p){ return p.trim(); }).filter(function(p){ return p.length > 0; });
+  if (parts.length <= 1) return [raw];
+
+  var pages = [];
+  var pendingSource = "";
+  for (var i = 0; i < parts.length; i++) {
+    var p = parts[i];
+    if (/^CDC Measles Data/i.test(p)) continue;
+    if (/^URLs processed/i.test(p)) continue;
+    if (/^FAILED URLS/i.test(p)) continue;
+    if (/^SOURCE:\s*https?:\/\//i.test(p)) { pendingSource = p; continue; }
+    if (p.length > 50) {
+      pages.push(pendingSource ? pendingSource + "\n" + p : p);
+      pendingSource = "";
+    }
+  }
+  return pages.length > 0 ? pages : [raw];
+}
+
+// ── Extract the CDC "Updated on" date ────────────────────────────────────────
+function extractUpdateDate(text) {
+  // "Updated on October 8, 2025" / "Updated on January 30, 2026"
+  var m = text.match(/Updated on\s+([A-Za-z]+\.?\s+\d{1,2},?\s*\d{4})/i);
+  if (m) return m[1].replace(/\s+/g, " ").trim();
+  // Fallback patterns
+  var patterns = [
+    /Updated[:\s]+([A-Za-z]+ \d{1,2},?\s*\d{4})/i,
+    /Last updated[:\s]+([A-Za-z]+ \d{1,2},?\s*\d{4})/i
+  ];
+  for (var i = 0; i < patterns.length; i++) {
+    var pm = text.match(patterns[i]);
+    if (pm) return pm[1].trim();
+  }
+  // SOURCE url Wayback timestamp
+  var src = text.match(/SOURCE:\s*(https?:\/\/\S+)/i);
+  if (src) {
+    var wb = src[1].match(/web\.archive\.org\/web\/(\d{4})(\d{2})(\d{2})/);
+    if (wb) return wb[1] + "-" + wb[2] + "-" + wb[3] + " (archive)";
+  }
+  return "Unknown";
+}
+
+function sortableDate(d) {
+  if (!d || d === "Unknown") return 0;
+  var clean = d.replace(/\s*\(archive\)/, "").replace(/\.$/, "");
+  var parsed = new Date(clean);
+  if (!isNaN(parsed.getTime())) return parsed.getTime();
+  var ym = d.match(/(\d{4})/);
+  return ym ? parseInt(ym[1]) * 1e8 : 0;
+}
+
+// ── Detect multi-column format ────────────────────────────────────────────────
+// Multi-col: has standalone 4-digit year lines appearing 2+ times
+function isMultiCol(lines) {
+  var n = 0;
+  for (var i = 0; i < lines.length; i++) {
+    if (/^\d{4}$/.test(lines[i].trim())) n++;
+  }
+  return n >= 2;
+}
+
+// ── Parse multi-column format ─────────────────────────────────────────────────
+// Actual structure from Playwright output:
+//
+// 2026          <- year header
+// To date       <- period label
+// 2025          <- year header
+// Full year     <- period label
+// Total Cases   <- field label
+// 588           <- col 0 value
+// 2267          <- col 1 value
+// Age           <- section header (skip)
+// Under 5 years <- field label
+// 157 (27%)     <- col 0 value
+// 581 (26%)     <- col 1 value  ... etc.
+//
+// Hosp section:
+// Total Hospitalized  <- label
+// 3%                  <- col 0 value (line 1 of 2)
+// (17 of 588 cases)   <- col 0 value (line 2 of 2)
+// 11%                 <- col 1 value (line 1)
+// (244 of 2267 cases) <- col 1 value (line 2)
+
+function parseMultiCol(lines) {
+  // Find year line indices
+  var yearIdxs = [];
+  for (var i = 0; i < lines.length; i++) {
+    if (/^\d{4}$/.test(lines[i].trim())) yearIdxs.push(i);
+  }
+
+  // Build column descriptors
+  var cols = [];
+  for (var j = 0; j < yearIdxs.length; j++) {
+    var yi = yearIdxs[j];
+    var nxt = (lines[yi + 1] || "").trim();
+    var nxtIsYear = /^\d{4}$/.test(nxt);
+    var nxtIsVal  = isValueLine(nxt);
+    var hasPeriod = !nxtIsYear && !nxtIsVal && nxt.length > 0 && nxt.length < 40;
+    cols.push({ year: parseInt(lines[yi], 10), period: hasPeriod ? nxt : "", lineIdx: yi });
+  }
+
+  var maxYear = Math.max.apply(null, cols.map(function(c){ return c.year; }));
+  var colIdx  = 0;
+  for (var k = 0; k < cols.length; k++) { if (cols[k].year === maxYear) { colIdx = k; break; } }
+
+  var nCols     = cols.length;
+  var lastCol   = cols[cols.length - 1];
+  var dataStart = lastCol.lineIdx + (lastCol.period ? 2 : 1);
+
+  // Section headers to skip (lines that are labels but NOT followed by nCols value lines)
+  var skipLabels = /^(age|vaccination status|u\.s\.|percent of age group|real-time|find more|resources|expand)/i;
+
+  function isValueLine(v) {
+    if (!v) return false;
+    return /^[\d,]+(\s*\([\d.]+%\))?$/.test(v) ||
+           /^\d+(?:\.\d+)?%$/.test(v) ||
+           /^\d+%\s*\([\d,]+\s+of\s+[\d,]+/.test(v) ||
+           /^\(\d[\d,]*\s+of\s+[\d,]+/.test(v) ||
+           /^\d+%\s*\(\d[\d,]*\s+of\s+[\d,]+/.test(v);
+  }
+
+  var fieldOrder = [];
+  var fieldMap   = {};
+
+  var i = dataStart;
+  while (i < lines.length) {
+    var label = lines[i].trim();
+
+    if (!label || skipLabels.test(label)) { i++; continue; }
+
+    var peek = [];
+    for (var c = 0; c < nCols; c++) {
+      peek.push((lines[i + 1 + c] || "").trim());
+    }
+
+    if (peek.every(isValueLine)) {
+      // Standard: one value line per column — take exactly nCols lines
+      var key = label.toLowerCase();
+      if (!fieldMap[key]) { fieldMap[key] = []; fieldOrder.push(key); }
+      fieldMap[key].push(peek.slice(0, nCols));
+      i += 1 + nCols;
+    } else if (peek.some(isValueLine)) {
+      // Partial match — some lines are values, some aren't.
+      // Collect however many leading value lines there are (up to nCols) and pad with "".
+      var partial = [];
+      for (var c2 = 0; c2 < nCols; c2++) {
+        partial.push(isValueLine(peek[c2]) ? peek[c2] : "");
+      }
+      // Only store if at least the first value line is non-empty
+      if (partial[0]) {
+        var key3 = label.toLowerCase();
+        if (!fieldMap[key3]) { fieldMap[key3] = []; fieldOrder.push(key3); }
+        fieldMap[key3].push(partial);
+      }
+      // Advance past the value lines that were consumed
+      var consumed = 0;
+      for (var c3 = 0; c3 < nCols; c3++) { if (isValueLine(peek[c3])) consumed++; else break; }
+      i += 1 + (consumed || 1);
+    } else {
+      i++;
+    }
+  }
+
+  function isValueLine(v) {
+    if (!v) return false;
+    return /^[\d,]+(\s*\([\d.]+%\))?$/.test(v) ||
+           /^\d+(?:\.\d+)?%$/.test(v) ||
+           /^\d+%\s*\([\d,]+\s+of\s+[\d,]+/.test(v) ||
+           /^\(\d[\d,]*\s+of\s+[\d,]+/.test(v);
+  }
+
+  function getVal(kws, occ) {
+    occ = occ || 0;
+    for (var fi = 0; fi < fieldOrder.length; fi++) {
+      var key = fieldOrder[fi];
+      var hit = kws.every(function(w){ return key.indexOf(w.toLowerCase()) !== -1; });
+      if (hit && fieldMap[key].length > occ) return fieldMap[key][occ][colIdx] || null;
+    }
+    return null;
+  }
+
+  function getCount(kws, occ) {
+    var v = getVal(kws, occ) || "";
+    var m = v.match(/^([\d,]+)/);
+    return m ? parseNum(m[1]) : null;
+  }
+
+  var update_date = maxYear + (cols[colIdx].period ? " (" + cols[colIdx].period + ")" : "");
+  var total_cases = getCount(["total cases"]) || getCount(["total"]);
+
+  var cases_under_5     = getCount(["under 5"]);
+  var cases_5_19        = getCount(["5-19"]);
+  var cases_over_20     = getCount(["20+"]);
+  var cases_age_unknown = getCount(["age unknown"]);
+
+  var uvPct = parsePct(getVal(["unvaccinated"]));
+  var odPct = parsePct(getVal(["one mmr"]));
+  var tdPct = parsePct(getVal(["two mmr"]));
+  var cases_unvaccinated_unknown = (total_cases && uvPct !== null) ? Math.round(total_cases * uvPct / 100) : null;
+  var cases_one_dose             = (total_cases && odPct !== null) ? Math.round(total_cases * odPct / 100) : null;
+  var cases_two_doses            = (total_cases && tdPct !== null) ? Math.round(total_cases * tdPct / 100) : null;
+
+  // Hosp total: combined "3% (17 of 588 cases)" or split across two lines joined above
+  var hosp_total = null;
+  var hospRaw = getVal(["total hospitalized"]) || getVal(["hospitali"]);
+  if (hospRaw) {
+    var hof = hospRaw.match(/\((\d[\d,]*)\s+of/);
+    if (hof) hosp_total = parseNum(hof[1]);
+    else if (total_cases) hosp_total = Math.round(total_cases * (parsePct(hospRaw) || 0) / 100);
+  }
+
+  // Hosp % by age — second occurrence of each age label (first = cases section, second = hosp section)
+  function getHospPct(kws) {
+    var v = getVal(kws, 1);
+    return v ? parsePct(v) : null;
+  }
+
+  return {
+    update_date: update_date, total_cases: total_cases,
+    cases_under_5: cases_under_5, cases_5_19: cases_5_19,
+    cases_over_20: cases_over_20, cases_age_unknown: cases_age_unknown,
+    cases_unvaccinated_unknown: cases_unvaccinated_unknown,
+    cases_one_dose: cases_one_dose, cases_two_doses: cases_two_doses,
+    hospitalizations_total: hosp_total,
+    hospitalizations_under_5_pct: getHospPct(["under 5"]),
+    hospitalizations_5_19_pct:    getHospPct(["5-19"]),
+    hospitalizations_over_20_pct: getHospPct(["20+"]),
+    hospitalizations_unk_pct:     getHospPct(["age unknown"])
+  };
+}
+
+// ── Parse single-column inline format ────────────────────────────────────────
+// e.g. "Under 5 years: 423 (27%)" all on one line
+function parseSingleCol(raw) {
+  var update_date = extractUpdateDate(raw);
+
+  var total_cases = null;
+  var tcm = raw.match(/Total cases\s*\n\s*(\d[\d,]*)/i) || raw.match(/Total cases[:\s]+(\d[\d,]*)/i);
+  if (tcm) total_cases = parseNum(tcm[1]);
+
+  // Inline: "Under 5 years: 423 (27%)"
+  var u5m  = raw.match(/Under 5 years?[:\s]+([\d,]+)\s*\(/i);
+  var a19m = raw.match(/5[-–]19 years?[:\s]+([\d,]+)\s*\(/i);
+  var a20m = raw.match(/20\+\s*years?[:\s]+([\d,]+)\s*\(/i);
+  var aUnk = raw.match(/Age unknown[:\s]+([\d,]+)\s*\(/i);
+  var cases_under_5     = u5m  ? parseNum(u5m[1])  : null;
+  var cases_5_19        = a19m ? parseNum(a19m[1]) : null;
+  var cases_over_20     = a20m ? parseNum(a20m[1]) : null;
+  var cases_age_unknown = aUnk ? parseNum(aUnk[1]) : null;
+
+  var uvm = raw.match(/Unvaccinated or Unknown[:\s]+([\d.]+)%/i);
+  var odm = raw.match(/One MMR dose[:\s]+([\d.]+)%/i);
+  var tdm = raw.match(/Two MMR doses?[:\s]+([\d.]+)%/i);
+  var cases_unvaccinated_unknown = (total_cases && uvm) ? Math.round(total_cases * parseFloat(uvm[1]) / 100) : null;
+  var cases_one_dose             = (total_cases && odm) ? Math.round(total_cases * parseFloat(odm[1]) / 100) : null;
+  var cases_two_doses            = (total_cases && tdm) ? Math.round(total_cases * parseFloat(tdm[1]) / 100) : null;
+
+  // Hosp total: "12% of cases hospitalized (193 of 1563)"
+  var hosp_total = null;
+  var hm = raw.match(/hospitalized\s*\((\d[\d,]*)\s+of\s+[\d,]+\)/i);
+  if (!hm) hm = raw.match(/\((\d[\d,]*)\s+of\s+[\d,]+\)\./);
+  if (hm) {
+    hosp_total = parseNum(hm[1]);
+  } else if (total_cases) {
+    var hpctm = raw.match(/([\d.]+)%\s+of cases hospitalized/i);
+    if (hpctm) hosp_total = Math.round(total_cases * parseFloat(hpctm[1]) / 100);
+  }
+
+  // Hosp % by age — find "Percent of Age Group" section
+  var secIdx  = raw.search(/Percent of Age Group/i);
+  var hospSec = secIdx !== -1 ? raw.slice(secIdx) : raw;
+
+  var hu5m  = hospSec.match(/Under 5 years?[:\s]+([\d.]+)%/i);
+  var h519m = hospSec.match(/5[-–]19 years?[:\s]+([\d.]+)%/i);
+  var h20m  = hospSec.match(/20\+\s*years?[:\s]+([\d.]+)%/i);
+  var hUnkm = hospSec.match(/Age unknown[:\s]+([\d.]+)%/i);
+
+  return {
+    update_date: update_date, total_cases: total_cases,
+    cases_under_5: cases_under_5, cases_5_19: cases_5_19,
+    cases_over_20: cases_over_20, cases_age_unknown: cases_age_unknown,
+    cases_unvaccinated_unknown: cases_unvaccinated_unknown,
+    cases_one_dose: cases_one_dose, cases_two_doses: cases_two_doses,
+    hospitalizations_total: hosp_total,
+    hospitalizations_under_5_pct: hu5m  ? parseFloat(hu5m[1])  : null,
+    hospitalizations_5_19_pct:    h519m ? parseFloat(h519m[1]) : null,
+    hospitalizations_over_20_pct: h20m  ? parseFloat(h20m[1])  : null,
+    hospitalizations_unk_pct:     hUnkm ? parseFloat(hUnkm[1]) : null
+  };
+}
+
+// ── Main page dispatcher ──────────────────────────────────────────────────────
+function parsePage(pageRaw) {
+  var lines = pageRaw.replace(/\r\n/g, "\n").replace(/\r/g, "\n")
+                     .split("\n")
+                     .map(function(l){ return l.trim(); })
+                     .filter(function(l){ return l.length > 0; });
+  if (isMultiCol(lines)) return parseMultiCol(lines);
+  return parseSingleCol(pageRaw);
+}
+
+function countFilled(row) {
+  var n = 0;
+  var keys = Object.keys(row);
+  for (var i = 0; i < keys.length; i++) {
+    if (row[keys[i]] !== null && row[keys[i]] !== "Unknown") n++;
+  }
+  return n;
+}
+
+function parseAndAdd() {
+  var raw = document.getElementById("pasteBox").value.trim();
+  if (!raw) { showMsg("Nothing to parse — paste some text first.", "warn"); return; }
+
+  var pages = splitIntoPages(raw);
+  var added = 0, skipped = 0;
+
+  for (var i = 0; i < pages.length; i++) {
+    var row = parsePage(pages[i]);
+    if (countFilled(row) < 2) { skipped++; continue; }
+    rows.push(row);
+    added++;
+  }
+
+  rows.sort(function(a, b){ return sortableDate(b.update_date) - sortableDate(a.update_date); });
+  renderTable();
+
+  if (added === 0) {
+    showMsg("No rows could be parsed. Check that the pasted text matches the expected format.", "err");
+  } else if (skipped > 0) {
+    showMsg("Added " + added + " row" + (added !== 1 ? "s" : "") + ". " + skipped + " page" + (skipped !== 1 ? "s" : "") + " skipped (too few fields found).", "warn");
+  } else {
+    showMsg("Added " + added + " row" + (added !== 1 ? "s" : "") + " from " + pages.length + " page" + (pages.length !== 1 ? "s" : "") + ".", "ok");
+  }
+}
+
+// ── Render ────────────────────────────────────────────────────────────────────
+function fmt(v, isPct) {
+  if (v === null || v === undefined) return '<span class="na">--</span>';
+  return isPct ? v + "%" : v;
+}
+
+function renderTable() {
+  var tbody   = document.getElementById("tbody");
+  var countEl = document.getElementById("rowCount");
+  var expBtn  = document.getElementById("exportBtn");
+
+  countEl.textContent = rows.length + " row" + (rows.length !== 1 ? "s" : "");
+  expBtn.style.display = rows.length ? "inline-block" : "none";
+
+  if (!rows.length) {
+    tbody.innerHTML = '<tr><td colspan="14" class="na">No data yet.</td></tr>';
+    return;
+  }
+
+  var html = "";
+  for (var i = 0; i < rows.length; i++) {
+    var r = rows[i];
+    html += "<tr>";
+    html += "<td>" + fmt(r.update_date)                        + "</td>";
+    html += "<td>" + fmt(r.total_cases)                        + "</td>";
+    html += "<td>" + fmt(r.cases_under_5)                      + "</td>";
+    html += "<td>" + fmt(r.cases_5_19)                         + "</td>";
+    html += "<td>" + fmt(r.cases_over_20)                      + "</td>";
+    html += "<td>" + fmt(r.cases_age_unknown)                  + "</td>";
+    html += "<td>" + fmt(r.cases_unvaccinated_unknown)         + "</td>";
+    html += "<td>" + fmt(r.cases_one_dose)                     + "</td>";
+    html += "<td>" + fmt(r.cases_two_doses)                    + "</td>";
+    html += "<td>" + fmt(r.hospitalizations_total)             + "</td>";
+    html += "<td>" + fmt(r.hospitalizations_under_5_pct, true) + "</td>";
+    html += "<td>" + fmt(r.hospitalizations_5_19_pct,    true) + "</td>";
+    html += "<td>" + fmt(r.hospitalizations_over_20_pct, true) + "</td>";
+    html += "<td>" + fmt(r.hospitalizations_unk_pct,     true) + "</td>";
+    html += "</tr>";
+  }
+  tbody.innerHTML = html;
+}
+
+// ── Export CSV ────────────────────────────────────────────────────────────────
+function exportCSV() {
+  var headers = ["Update Date","Total Cases","Cases <5","Cases 5-19","Cases 20+","Cases Age Unknown",
+    "Cases Unvacc/Unknown","Cases 1 Dose","Cases 2+ Doses",
+    "Hosp Total","Hosp <5 %","Hosp 5-19 %","Hosp 20+ %","Hosp Age Unknown %"];
+  var keys = ["update_date","total_cases","cases_under_5","cases_5_19","cases_over_20","cases_age_unknown",
+    "cases_unvaccinated_unknown","cases_one_dose","cases_two_doses",
+    "hospitalizations_total","hospitalizations_under_5_pct","hospitalizations_5_19_pct",
+    "hospitalizations_over_20_pct","hospitalizations_unk_pct"];
+  var lines = [headers.join(",")];
+  for (var i = 0; i < rows.length; i++) {
+    var r = rows[i];
+    var cols = keys.map(function(k) {
+      var v = r[k];
+      if (v === null || v === undefined) return "";
+      var s = String(v);
+      return (s.indexOf(",") !== -1 || s.indexOf('"') !== -1) ? '"' + s.replace(/"/g, '""') + '"' : s;
+    });
+    lines.push(cols.join(","));
+  }
+  var blob = new Blob([lines.join("\n")], {type: "text/csv"});
+  var a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "cdc_measles_data.csv";
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+}
+</script>
+</body>
+</html>
