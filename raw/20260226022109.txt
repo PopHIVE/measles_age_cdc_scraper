@@ -44,29 +44,66 @@ Full year
 
 Total Cases
 
+982
+
+2281
 
 Age
 Under 5 years
 
+248 (25%)
+
+
+584 (26%)
+
 
 5-19 years
+
+575 (59%)
+
+
+1012 (44%)
 
 
 20+ years
 
+152 (15%)
+
+
+672 (29%)
+
 
 Age unknown
+
+7 (1%)
+
+
+13 (1%)
 
 
 Vaccination Status
 Unvaccinated or Unknown
 
+94%
+
+
+93%
+
 
 One MMR dose
+
+3%
+
+
+3%
 
 
 Two MMR doses
 
+4%
+
+
+4%
 
 U.S. Hospitalizations
 
@@ -77,15 +114,44 @@ U.S. Hospitalizations
 
 Total Hospitalized
 
+4%
+
+(38 of 982 cases)
+
+
+11%
+
+(246 of 2281 cases)
+
 
 Percent of Age Group Hospitalized
 Under 5 years
 
+6% (16 of 248)
+
+
+18% (107 of 584)
+
 
 5-19 years
+
+2% (11 of 575)
+
+
+6% (57 of 1012)
 
 
 20+ years
 
+7% (10 of 152)
+
+
+12% (82 of 672)
+
 
 Age unknown
+
+14% (1 of 7)
+
+
+0% (0 of 13)
