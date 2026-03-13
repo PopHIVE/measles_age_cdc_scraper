@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pip show:*)",
+      "Bash(playwright install:*)",
+      "Bash(python -m playwright install chromium)",
+      "Bash(python measles_cdc_scraper.py)",
+      "WebFetch(domain:web.archive.org)",
+      "Bash(python -c \":*)",
+      "Bash(ls /c/Users/DMW63/OneDrive - Yale University/Desktop/R_Projects/POPHIVE PROJECT/measles_age_cdc_scraper/raw/*.txt)",
+      "Bash(python parse_raw_to_csv.py)",
+      "Bash(curl -s \"https://web.archive.org/cdx/search/cdx?url=https://www.cdc.gov/measles/data-research/index.html&output=json&fl=timestamp,statuscode&filter=statuscode:200&from=20240101&to=20241231\" -H 'User-Agent: Mozilla/5.0')",
+      "Bash(curl -s \"https://web.archive.org/cdx/search/cdx?url=https://www.cdc.gov/measles/data-research/index.html&output=json&fl=timestamp,statuscode&filter=statuscode:200&to=20241231&limit=5\" -H \"User-Agent: Mozilla/5.0\")"
+    ]
+  }
+}
