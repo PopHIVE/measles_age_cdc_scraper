@@ -1,0 +1,45 @@
+name: Weekly CDC Measles Scrape
+
+on:
+  schedule:
+    # Run every Wednesday at 10:00 UTC (after CDC Tuesday update)
+    - cron: "0 10 * * 3"
+  workflow_dispatch: # Allow manual trigger
+
+permissions:
+  contents: write
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          playwright install chromium --with-deps
+
+      - name: Scrape live CDC page
+        run: python measles_cdc_scraper.py --live
+
+      - name: Parse raw files to CSV
+        run: python parse_raw_to_csv.py
+
+      - name: Commit and push if changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add raw/ measles_structured.csv cdc_measles_urls.txt
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "Auto-update: CDC measles data $(date -u +%Y-%m-%d)"
+            git push
+          fi
