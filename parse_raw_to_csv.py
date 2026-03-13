@@ -27,15 +27,56 @@ def parse_update_date(text):
     return m.group(1) if m else None
 
 
+def scope_to_current_year(text):
+    """Extract just the current (most recent) year's data section.
+
+    Pages may show multiple years (e.g., 2025 data + 2024 archival data).
+    Returns text scoped from the first 'Measles cases in YYYY' heading
+    through the start of any subsequent year's section or boilerplate.
+    """
+    m = re.search(r"Measles cases in (\d{4})", text)
+    if not m:
+        return text
+
+    current_year = m.group(1)
+    start = m.start()
+    end = len(text)
+
+    # End at the next "Measles cases in [different year]"
+    next_year = re.search(
+        r"Measles cases in (?!" + current_year + r")\d{4}",
+        text[m.end():]
+    )
+    if next_year:
+        end = min(end, m.end() + next_year.start())
+
+    # Also end at navigation/boilerplate sections
+    for marker in ["What to know about measles", "Weekly measles cases",
+                    "ON THIS PAGE", "RELATED PAGES"]:
+        idx = text.find(marker, start)
+        if idx != -1:
+            end = min(end, idx)
+
+    return text[start:end]
+
+
 def parse_total_cases(text):
-    """Extract total confirmed cases from the prose paragraph."""
-    # Match patterns like "a total of 1,648 confirmed*" or "1,136 confirmed*"
+    """Extract total confirmed cases from the prose paragraph or structured block."""
+    # Match patterns like "a total of 1,648 confirmed*", "284 measles cases were reported",
+    # "there have been a total of 1,431 confirmed* measles cases reported"
     m = re.search(
-        r"(?:a total of\s+)?([\d,]+)\s+confirmed\*?\s+measles cases were reported",
+        r"(?:a total of\s+)?([\d,]+)\s+(?:confirmed\*?\s+)?measles cases\s+"
+        r"(?:were\s+reported|reported|have\s+been\s+reported)",
         text, re.IGNORECASE
     )
     if m:
         return int(m.group(1).replace(",", ""))
+
+    # Fallback: structured "Total cases\n\n284" block
+    m = re.search(r"Total cases\s*\n\s*\n?\s*([\d,]+)", text)
+    if m:
+        return int(m.group(1).replace(",", ""))
+
     return None
 
 
@@ -188,16 +229,21 @@ def parse_file(filepath):
     ts = os.path.basename(filepath).replace(".txt", "")
     snapshot_date = f"{ts[:4]}-{ts[4:6]}-{ts[6:8]}"
 
+    # Extract update date from full text (appears before data sections)
     update_date = parse_update_date(text)
-    total_cases = parse_total_cases(text)
 
-    if is_two_column_format(text):
-        parsed = parse_two_column(text)
+    # Scope to current year section to avoid mixing data from multiple years
+    scoped = scope_to_current_year(text)
+
+    total_cases = parse_total_cases(scoped)
+
+    if is_two_column_format(scoped):
+        parsed = parse_two_column(scoped)
         # The two-column format has an explicit total in the table
         if "total_cases_override" in parsed:
             total_cases = parsed.pop("total_cases_override")
     else:
-        parsed = parse_single_year(text)
+        parsed = parse_single_year(scoped)
 
     row = {
         "snapshot_date": snapshot_date,

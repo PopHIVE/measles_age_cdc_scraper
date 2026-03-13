@@ -43,7 +43,7 @@ CDX_API = (
     "https://web.archive.org/cdx/search/cdx"
     f"?url={CDC_URL}"
     "&output=json&fl=timestamp,statuscode"
-    "&filter=statuscode:200&from=20250101"
+    "&filter=statuscode:200&from=20240101"
 )
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
