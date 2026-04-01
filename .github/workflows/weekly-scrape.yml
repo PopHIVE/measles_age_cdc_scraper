@@ -2,8 +2,8 @@ name: Weekly CDC Measles Scrape
 
 on:
   schedule:
-    # Run every Wednesday at 10:00 UTC (after CDC Tuesday update)
-    - cron: "0 10 * * 3"
+    # Run every Wednesday at 8am:00 ET (after CDC Wednesday update)
+    - cron: "0 12 * * 5"
   workflow_dispatch: # Allow manual trigger
 
 permissions:
